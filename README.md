@@ -1,23 +1,38 @@
-Built an AI-powered research assistant using Streamlit, Gemini, and arXiv APIs.
-Leveraged AI-assisted development tools during implementation while
-designing, integrating, testing, and deploying the system end-to-end.
-AI Research Copilot
+# AI Research Copilot
+AI Research Copilot is an AI-powered academic research assistant that helps users discover, analyze, and interact with research papers.
 
-This is an AI-powered research assistant that:
-- Fetches academic papers from arXiv
-- Generates structured research reports using Gemini AI
-- Allows chat with research papers (RAG-style)
-- Stores user search history
+## Features
+* Research paper retrieval from arXiv
+* AI-generated literature reviews
+* Research gap identification
+* Future scope generation
+* Suggested research questions
+* Interactive chat with papers
+* User history tracking
+* Streamlit-based web interface
 
-Tech Stack:
-- Streamlit
-- Google Gemini API
-- arXiv API
-- Python
+## Tech Stack
+### Frontend
+* Streamlit
+### AI
+* Google Gemini API
+### Data Source
+* arXiv API
+### Backend
+* Python
 
-Features:
-- Login system
-- Research paper explorer
-- AI-generated literature review
-- Chat with papers
-- History tracking
+## Workflow
+1. User enters a research topic
+2. Papers are fetched from arXiv
+3. Abstracts are analyzed by Gemini
+4. Research insights are generated
+5. Users can ask follow-up questions
+
+## Future Improvements
+* PDF export
+* Advanced RAG with vector search
+* User authentication
+* Citation generation
+* Research proposal generation
+
+
