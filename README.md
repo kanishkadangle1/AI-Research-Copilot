@@ -1,3 +1,6 @@
+Built an AI-powered research assistant using Streamlit, Gemini, and arXiv APIs.
+Leveraged AI-assisted development tools during implementation while
+designing, integrating, testing, and deploying the system end-to-end.
 AI Research Copilot
 
 This is an AI-powered research assistant that:
