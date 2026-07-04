@@ -87,7 +87,7 @@ section[data-testid="stSidebar"] * {
 """, unsafe_allow_html=True)
 
 # ===================== GEMINI =====================
-genai.configure(api_key="GEMINI API KEY")
+genai.configure(api_key="AQ.Ab8RN6KXJRqxx4pMcPKWsPFiSildI86zXzwTFRbOWkW4MUKS-AY")
 
 # FIXED MODEL (IMPORTANT)
 model = genai.GenerativeModel("gemini-1.5-flash")
