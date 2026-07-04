@@ -5,98 +5,35 @@ from datetime import datetime
 import streamlit as st
 import requests
 import xml.etree.ElementTree as ET
+import numpy as np
+
+from sklearn.feature_extraction.text import TfidfVectorizer
 import google.generativeai as genai
 
-# ===================== PAGE CONFIG =====================
+
+# ===================== STREAMLIT CONFIG =====================
 st.set_page_config(
     page_title="AI Research Copilot",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# ===================== UI STYLE =====================
-st.markdown("""
-<style>
 
-.stApp {
-    background: #f4f7ff;
-    color: #0f172a;
-}
+# ===================== GEMINI SAFE CONFIG =====================
+# IMPORTANT: This reads from Streamlit Secrets
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-h1 {
-    font-size: 38px;
-    font-weight: 800;
-    color: #0f172a;
-}
-
-.subtitle {
-    color: #475569;
-    font-size: 16px;
-    margin-bottom: 15px;
-}
-
-input {
-    border-radius: 10px !important;
-    border: 1px solid #cbd5e1 !important;
-    padding: 10px !important;
-}
-
-.stButton > button {
-    background: #2563eb;
-    color: white;
-    border-radius: 10px;
-    padding: 10px 16px;
-    font-weight: 600;
-    border: none;
-}
-
-section[data-testid="stSidebar"] {
-    background: #0b1220;
-}
-
-section[data-testid="stSidebar"] * {
-    color: white !important;
-}
-
-.sidebar-card {
-    background: rgba(255,255,255,0.08);
-    padding: 12px;
-    border-radius: 12px;
-    margin-bottom: 10px;
-}
-
-.paper-card {
-    background: white;
-    padding: 15px;
-    border-radius: 12px;
-    border: 1px solid #e5e7eb;
-    margin-bottom: 10px;
-}
-
-.paper-title {
-    font-weight: 700;
-    color: #0f172a;
-}
-
-.paper-text {
-    font-size: 13px;
-    color: #475569;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ===================== GEMINI =====================
-genai.configure(api_key="AQ.Ab8RN6KXJRqxx4pMcPKWsPFiSildI86zXzwTFRbOWkW4MUKS-AY")
-
-# FIXED MODEL (IMPORTANT)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# ===================== ARXIV =====================
+
+# ===================== UI =====================
+st.title("AI Research Copilot (RAG Powered)")
+st.write("A hybrid retrieval + LLM research assistant")
+
+
+# ===================== ARXIV FETCH =====================
 def fetch_arxiv_papers(topic, max_results=5):
     url = f"http://export.arxiv.org/api/query?search_query=all:{topic}&start=0&max_results={max_results}"
-
-    response = requests.get(url, timeout=10)
+    response = requests.get(url)
     root = ET.fromstring(response.content)
 
     papers = []
@@ -112,192 +49,87 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     return papers
 
-# ===================== HISTORY =====================
-HISTORY_FILE = "history.json"
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    return []
+# ===================== HYBRID RAG =====================
+def hybrid_retrieve(papers, query, top_k=3):
 
-def save_history(entry):
-    history = load_history()
-    history.append(entry)
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=4)
+    docs = [p["title"] + " " + p["abstract"] for p in papers]
 
-# ===================== LOGIN =====================
-if "user" not in st.session_state:
-    st.session_state.user = None
+    vectorizer = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = vectorizer.fit_transform(docs + [query])
 
-if st.session_state.user is None:
-    st.title("AI Research Copilot")
-    st.write("Login to continue")
+    query_vec = tfidf_matrix[-1]
+    doc_vecs = tfidf_matrix[:-1]
 
-    username = st.text_input("Enter your name")
+    scores = (doc_vecs @ query_vec.T).toarray().flatten()
 
-    if st.button("Login"):
-        if username:
-            st.session_state.user = username.capitalize()
-            st.rerun()
-        else:
-            st.warning("Enter name")
+    top_indices = np.argsort(scores)[::-1][:top_k]
 
-    st.stop()
+    return [papers[i] for i in top_indices]
 
-name = st.session_state.user
 
-# ===================== SIDEBAR =====================
-st.sidebar.markdown(f"""
-<div class="sidebar-card">
-<h3>Hey {name}</h3>
-<p>Welcome back</p>
-</div>
-""", unsafe_allow_html=True)
+# ===================== INPUT =====================
+topic = st.text_input("Enter Research Topic")
 
-st.sidebar.title("History")
 
-history = load_history()
-
-for item in reversed(history[-10:]):
-    if st.sidebar.button(item["topic"]):
-        st.session_state.selected = item
-
-if "selected" in st.session_state:
-    st.subheader("Previous Research")
-    st.write(st.session_state.selected["response"])
-
-# ===================== MAIN UI =====================
-st.markdown("<h1>AI Research Copilot</h1>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle'>Generate research insights from academic papers</div>", unsafe_allow_html=True)
-
-topic = st.text_input("Enter Research Topic", placeholder="e.g. Generative AI in Education")
-
-# ===================== GENERATE =====================
+# ===================== MAIN FLOW =====================
 if st.button("Generate Research Report"):
 
     if not topic:
-        st.warning("Enter topic")
+        st.warning("Please enter a topic")
         st.stop()
 
     st.info("Fetching papers...")
 
-    try:
-        papers = fetch_arxiv_papers(topic, 5)
-    except Exception as e:
-        st.error("Failed to fetch papers")
-        st.exception(e)
-        st.stop()
+    papers = fetch_arxiv_papers(topic, 5)
 
-    if not papers:
-        st.error("No papers found")
-        st.stop()
+    st.info("Running RAG retrieval...")
 
-    # LIMIT PAPERS (IMPORTANT FIX)
-    papers = papers[:3]
+    top_papers = hybrid_retrieve(papers, topic, top_k=3)
 
-    st.session_state.papers = papers
+    context = ""
 
-    research_text = ""
-
-    for p in papers:
-        research_text += f"""
-Title: {p['title']}
-Abstract: {p['abstract']}
--------------------------
-"""
-
-    # TRIM PROMPT SIZE (IMPORTANT FIX)
-    research_text = research_text[:20000]
-
-    prompt = f"""
-You are a research assistant.
-
-Use these papers:
-
-{research_text}
-
-Generate:
-1. Literature Review
-2. Major Themes
-3. Research Gaps
-4. Future Scope
-5. Research Questions
-"""
-
-    st.info("Generating insights...")
-
-    try:
-        response = model.generate_content(prompt)
-        result_text = response.text
-
-    except Exception as e:
-        st.error("Gemini API failed")
-        st.exception(e)
-        st.stop()
-
-    # ===================== PAPERS =====================
-    st.subheader("Research Papers")
-
-    for p in papers:
-        st.markdown(f"""
-<div class="paper-card">
-<div class="paper-title">{p['title']}</div>
-<div class="paper-text">{p['abstract'][:300]}...</div>
-</div>
-""", unsafe_allow_html=True)
-
-    # ===================== OUTPUT =====================
-    st.subheader("AI Insights")
-    st.write(result_text)
-
-    # ===================== SAVE HISTORY =====================
-    save_history({
-        "user": name,
-        "topic": topic,
-        "response": result_text,
-        "timestamp": str(datetime.now())
-    })
-
-# ===================== CHAT WITH PAPERS =====================
-st.subheader("Chat with Papers")
-
-if "papers" in st.session_state:
-
-    question = st.text_input("Ask something about these papers")
-
-    if st.button("Ask AI"):
-
-        context = ""
-
-        for p in st.session_state.papers:
-            context += f"""
+    for p in top_papers:
+        context += f"""
 Title: {p['title']}
 Abstract: {p['abstract']}
 -------------------
 """
 
-        context = context[:20000]
+    prompt = f"""
+You are an expert research assistant.
 
-        chat_prompt = f"""
-You are a research assistant.
+Use ONLY the given context.
 
-Answer ONLY using the given papers.
-
-PAPERS:
+CONTEXT:
 {context}
 
-QUESTION:
-{question}
+TASK:
+1. Literature Review
+2. Key Insights
+3. Research Gaps
+4. Future Scope
+5. 3 Research Questions
 
-Give a clear academic answer.
+Keep output structured and academic.
+Do NOT hallucinate.
 """
 
-        try:
-            chat_response = model.generate_content(chat_prompt)
-            st.write(chat_response.text)
+    st.info("Generating response from Gemini...")
 
-        except Exception as e:
-            st.error("Chat failed")
-            st.exception(e)
+    response = model.generate_content(prompt)
+
+    # ===================== DISPLAY PAPERS =====================
+    st.subheader("Top Retrieved Papers")
+
+    for p in top_papers:
+        st.markdown(f"""
+        **{p['title']}**
+
+        {p['abstract'][:300]}...
+        ---
+        """)
+
+    # ===================== OUTPUT =====================
+    st.subheader("AI Research Output")
+    st.write(response.text)
