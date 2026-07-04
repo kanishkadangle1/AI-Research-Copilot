@@ -23,28 +23,24 @@ st.markdown("""
     color: #0f172a;
 }
 
-/* Title */
 h1 {
     font-size: 38px;
     font-weight: 800;
     color: #0f172a;
 }
 
-/* Subtitle */
 .subtitle {
     color: #475569;
     font-size: 16px;
     margin-bottom: 15px;
 }
 
-/* Input */
 input {
     border-radius: 10px !important;
     border: 1px solid #cbd5e1 !important;
     padding: 10px !important;
 }
 
-/* Button */
 .stButton > button {
     background: #2563eb;
     color: white;
@@ -54,7 +50,6 @@ input {
     border: none;
 }
 
-/* Sidebar */
 section[data-testid="stSidebar"] {
     background: #0b1220;
 }
@@ -63,7 +58,6 @@ section[data-testid="stSidebar"] * {
     color: white !important;
 }
 
-/* Sidebar card */
 .sidebar-card {
     background: rgba(255,255,255,0.08);
     padding: 12px;
@@ -71,7 +65,6 @@ section[data-testid="stSidebar"] * {
     margin-bottom: 10px;
 }
 
-/* Paper card */
 .paper-card {
     background: white;
     padding: 15px;
@@ -95,13 +88,15 @@ section[data-testid="stSidebar"] * {
 
 # ===================== GEMINI =====================
 genai.configure(api_key="GEMINI API KEY")
-model = genai.GenerativeModel("gemini-2.5-flash")
+
+# FIXED MODEL (IMPORTANT)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ===================== ARXIV =====================
 def fetch_arxiv_papers(topic, max_results=5):
     url = f"http://export.arxiv.org/api/query?search_query=all:{topic}&start=0&max_results={max_results}"
 
-    response = requests.get(url)
+    response = requests.get(url, timeout=10)
     root = ET.fromstring(response.content)
 
     papers = []
@@ -188,9 +183,21 @@ if st.button("Generate Research Report"):
 
     st.info("Fetching papers...")
 
-    papers = fetch_arxiv_papers(topic, 5)
+    try:
+        papers = fetch_arxiv_papers(topic, 5)
+    except Exception as e:
+        st.error("Failed to fetch papers")
+        st.exception(e)
+        st.stop()
 
-    st.session_state.papers = papers  # IMPORTANT for chat
+    if not papers:
+        st.error("No papers found")
+        st.stop()
+
+    # LIMIT PAPERS (IMPORTANT FIX)
+    papers = papers[:3]
+
+    st.session_state.papers = papers
 
     research_text = ""
 
@@ -200,6 +207,9 @@ Title: {p['title']}
 Abstract: {p['abstract']}
 -------------------------
 """
+
+    # TRIM PROMPT SIZE (IMPORTANT FIX)
+    research_text = research_text[:20000]
 
     prompt = f"""
 You are a research assistant.
@@ -218,7 +228,14 @@ Generate:
 
     st.info("Generating insights...")
 
-    response = model.generate_content(prompt)
+    try:
+        response = model.generate_content(prompt)
+        result_text = response.text
+
+    except Exception as e:
+        st.error("Gemini API failed")
+        st.exception(e)
+        st.stop()
 
     # ===================== PAPERS =====================
     st.subheader("Research Papers")
@@ -233,17 +250,17 @@ Generate:
 
     # ===================== OUTPUT =====================
     st.subheader("AI Insights")
-    st.write(response.text)
+    st.write(result_text)
 
     # ===================== SAVE HISTORY =====================
     save_history({
         "user": name,
         "topic": topic,
-        "response": response.text,
+        "response": result_text,
         "timestamp": str(datetime.now())
     })
 
-# ===================== CHAT WITH PAPERS (PHASE C) =====================
+# ===================== CHAT WITH PAPERS =====================
 st.subheader("Chat with Papers")
 
 if "papers" in st.session_state:
@@ -261,6 +278,8 @@ Abstract: {p['abstract']}
 -------------------
 """
 
+        context = context[:20000]
+
         chat_prompt = f"""
 You are a research assistant.
 
@@ -275,6 +294,10 @@ QUESTION:
 Give a clear academic answer.
 """
 
-        chat_response = model.generate_content(chat_prompt)
+        try:
+            chat_response = model.generate_content(chat_prompt)
+            st.write(chat_response.text)
 
-        st.write(chat_response.text)
+        except Exception as e:
+            st.error("Chat failed")
+            st.exception(e)
