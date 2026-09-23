@@ -75,7 +75,7 @@ except Exception:
 # ============================================================
 
 st.title("AI Research Copilot")
-st.write("Research intelligence for discovering, analyzing, and connecting academic knowledge."))
+st.write("Research intelligence for discovering, analyzing, and connecting academic knowledge.")
 
 
 # ============================================================
