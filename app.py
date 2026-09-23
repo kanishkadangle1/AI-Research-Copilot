@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from google import genai
 
+
 # ============================================================
 # STREAMLIT CONFIG
 # ============================================================
@@ -20,18 +21,27 @@ st.set_page_config(
 
 
 # ============================================================
-# GEMINI CONFIG
+# GEMINI CONFIGURATION
 # ============================================================
 
 try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+
+except Exception:
+    st.error(
+        "GEMINI_API_KEY was not found in Streamlit Secrets."
+    )
+    st.stop()
+
+
+try:
     client = genai.Client(
-        api_key=st.secrets["GEMINI_API_KEY"]
+        api_key=GEMINI_API_KEY
     )
 
 except Exception as e:
     st.error(
-        "Gemini API key is not configured correctly. "
-        "Please check Streamlit Secrets."
+        f"Could not initialize Gemini: {e}"
     )
     st.stop()
 
@@ -47,7 +57,7 @@ st.write(
 
 
 # ============================================================
-# ARXIV FETCH
+# ARXIV PAPER RETRIEVAL
 # ============================================================
 
 def fetch_arxiv_papers(topic, max_results=5):
@@ -72,35 +82,40 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     papers = []
 
-    atom_namespace = {
+    namespace = {
         "atom": "http://www.w3.org/2005/Atom"
     }
 
     for entry in root.findall(
         "atom:entry",
-        atom_namespace
+        namespace
     ):
 
         title_element = entry.find(
             "atom:title",
-            atom_namespace
+            namespace
         )
 
-        summary_element = entry.find(
+        abstract_element = entry.find(
             "atom:summary",
-            atom_namespace
+            namespace
         )
 
-        if title_element is None or summary_element is None:
+        if (
+            title_element is None
+            or abstract_element is None
+        ):
             continue
 
         title = title_element.text or ""
-        summary = summary_element.text or ""
+        abstract = abstract_element.text or ""
 
-        papers.append({
-            "title": title.strip(),
-            "abstract": summary.strip()
-        })
+        papers.append(
+            {
+                "title": title.strip(),
+                "abstract": abstract.strip()
+            }
+        )
 
     return papers
 
@@ -119,8 +134,8 @@ def hybrid_retrieve(
         return []
 
     documents = [
-        p["title"] + " " + p["abstract"]
-        for p in papers
+        paper["title"] + " " + paper["abstract"]
+        for paper in papers
     ]
 
     vectorizer = TfidfVectorizer(
@@ -143,17 +158,14 @@ def hybrid_retrieve(
         scores
     )[::-1][:top_k]
 
-    retrieved_papers = [
-        papers[i]
-        for i in top_indices
+    return [
+        papers[index]
+        for index in top_indices
     ]
 
-    return retrieved_papers
-
 
 # ============================================================
-# ============================================================
-# GEMINI MODEL DISCOVERY
+# GET AVAILABLE GEMINI MODELS
 # ============================================================
 
 def get_available_gemini_models():
@@ -166,7 +178,6 @@ def get_available_gemini_models():
 
             model_name = model.name
 
-            # Remove "models/" prefix if present
             if model_name.startswith("models/"):
                 model_name = model_name.replace(
                     "models/",
@@ -174,36 +185,25 @@ def get_available_gemini_models():
                     1
                 )
 
-            # Only consider models that support
-            # generateContent
-            supported_methods = getattr(
-                model,
-                "supported_actions",
-                []
+            # Store every model returned by the API.
+            # We will inspect the names and prefer Flash.
+            available_models.append(
+                model_name
             )
-
-            if (
-                not supported_methods
-                or "generateContent" in supported_methods
-            ):
-
-                available_models.append(
-                    model_name
-                )
 
         return available_models
 
     except Exception as e:
 
         st.error(
-            f"Could not retrieve available Gemini models: {e}"
+            f"Could not retrieve Gemini models: {e}"
         )
 
         return []
 
 
 # ============================================================
-# SELECT A FLASH MODEL
+# SELECT GEMINI MODEL
 # ============================================================
 
 def select_gemini_model():
@@ -213,7 +213,9 @@ def select_gemini_model():
     if not models:
         return None
 
-    # Prefer Flash models.
+    # Prefer Flash models because they are generally
+    # appropriate for a fast research assistant.
+
     flash_models = [
         model
         for model in models
@@ -222,20 +224,23 @@ def select_gemini_model():
 
     if flash_models:
 
-        # Prefer newer-looking models first.
+        # Sort so newer-looking model names
+        # are considered first.
+
         flash_models.sort(
             reverse=True
         )
 
         return flash_models[0]
 
-    # If no Flash model exists,
-    # use the first compatible model.
+    # If no Flash model is available,
+    # use the first model returned by Gemini.
+
     return models[0]
 
 
 # ============================================================
-# GEMINI GENERATION WITH RETRY
+# GEMINI GENERATION
 # ============================================================
 
 def generate_with_gemini(prompt):
@@ -245,11 +250,10 @@ def generate_with_gemini(prompt):
     if not model_name:
 
         raise RuntimeError(
-            "No compatible Gemini model was found "
-            "for your API key."
+            "No Gemini model was found for your API key."
         )
 
-    st.write(
+    st.info(
         f"Using Gemini model: `{model_name}`"
     )
 
@@ -265,6 +269,7 @@ def generate_with_gemini(prompt):
             )
 
             if response is None:
+
                 raise RuntimeError(
                     "Gemini returned an empty response."
                 )
@@ -281,9 +286,9 @@ def generate_with_gemini(prompt):
 
             error_message = str(e)
 
-            # ================================================
-            # TEMPORARY SERVICE / CAPACITY ERROR
-            # ================================================
+            # ==================================================
+            # TEMPORARY 503 ERROR
+            # ==================================================
 
             if (
                 "503" in error_message
@@ -295,7 +300,7 @@ def generate_with_gemini(prompt):
                     wait_time = 2 ** attempt
 
                     st.warning(
-                        f"Gemini is temporarily unavailable. "
+                        "Gemini is temporarily unavailable. "
                         f"Retrying in {wait_time} seconds..."
                     )
 
@@ -308,8 +313,7 @@ def generate_with_gemini(prompt):
                     raise RuntimeError(
                         "Gemini is currently experiencing "
                         "high demand or temporary capacity "
-                        "limitations. Please try again after "
-                        "a short while."
+                        "limitations. Please try again later."
                     )
 
             else:
@@ -319,66 +323,46 @@ def generate_with_gemini(prompt):
                 )
 
 
-                # ------------------------------------------------
-                # TEMPORARY 503 / UNAVAILABLE
-                # ------------------------------------------------
+# ============================================================
+# OPTIONAL MODEL DIAGNOSTIC
+# ============================================================
 
-                if (
-                    "503" in error_message
-                    or "UNAVAILABLE" in error_message
-                ):
+with st.expander(
+    "🔧 Gemini API Diagnostics"
+):
 
-                    # Exponential backoff:
-                    #
-                    # Attempt 1 -> 2 seconds
-                    # Attempt 2 -> 4 seconds
-                    # Attempt 3 -> 8 seconds
-
-                    wait_time = 2 ** attempt
-
-                    if attempt < 2:
-
-                        st.warning(
-                            f"{model_name} is temporarily "
-                            f"unavailable. Retrying in "
-                            f"{wait_time} seconds..."
-                        )
-
-                        time.sleep(
-                            wait_time
-                        )
-
-                    else:
-
-                        st.warning(
-                            f"{model_name} is still unavailable "
-                            "after multiple attempts. "
-                            "Trying another Gemini model..."
-                        )
-
-                else:
-
-                    # For errors such as invalid API keys,
-                    # invalid requests, permission errors, etc.,
-                    # retrying will not normally solve the issue.
-
-                    raise RuntimeError(
-                        f"Gemini API error: {e}"
-                    )
-
-    # ========================================================
-    # ALL MODELS FAILED
-    # ========================================================
-
-    raise RuntimeError(
-        "Gemini is temporarily unavailable. "
-        "All configured models were unavailable. "
-        f"Last error: {last_error}"
+    st.write(
+        "Use this section to check which Gemini "
+        "models are available to your API key."
     )
+
+    if st.button(
+        "Check Available Gemini Models"
+    ):
+
+        models = get_available_gemini_models()
+
+        if models:
+
+            st.success(
+                "Gemini models available to your API key:"
+            )
+
+            for model in models:
+
+                st.write(
+                    f"- `{model}`"
+                )
+
+        else:
+
+            st.error(
+                "No Gemini models were returned."
+            )
 
 
 # ============================================================
-# INPUT
+# USER INPUT
 # ============================================================
 
 topic = st.text_input(
@@ -388,7 +372,7 @@ topic = st.text_input(
 
 
 # ============================================================
-# MAIN FLOW
+# MAIN APPLICATION
 # ============================================================
 
 if st.button(
@@ -397,7 +381,7 @@ if st.button(
 ):
 
     # ========================================================
-    # VALIDATE INPUT
+    # VALIDATE TOPIC
     # ========================================================
 
     if not topic.strip():
@@ -414,7 +398,7 @@ if st.button(
     # ========================================================
 
     st.info(
-        "📄 Fetching research papers from arXiv..."
+        "📄 Fetching papers from arXiv..."
     )
 
     try:
@@ -453,34 +437,34 @@ if st.button(
     except Exception as e:
 
         st.error(
-            f"Could not fetch papers from arXiv: {e}"
+            f"Could not fetch papers: {e}"
         )
 
         st.stop()
 
 
     # ========================================================
-    # CHECK PAPERS
+    # CHECK PAPER RESULTS
     # ========================================================
 
     if not papers:
 
         st.warning(
-            "No research papers were found for "
-            f"the topic: {topic}"
+            f"No research papers were found for: {topic}"
         )
 
         st.info(
-            "Try a broader research topic such as "
-            "'Large Language Models', 'Artificial Intelligence', "
-            "or 'Computer Vision'."
+            "Try a broader topic, for example: "
+            "'Large Language Models', "
+            "'Artificial Intelligence', or "
+            "'Computer Vision'."
         )
 
         st.stop()
 
 
     # ========================================================
-    # RAG RETRIEVAL
+    # RETRIEVAL
     # ========================================================
 
     st.info(
@@ -530,104 +514,101 @@ Abstract:
 
 
     # ========================================================
-    # PROMPT
+    # GEMINI PROMPT
     # ========================================================
 
     prompt = f"""
 You are an expert academic research assistant.
 
-Your task is to analyze the research papers provided
-in the context and produce a structured research synthesis.
+You are helping a student or researcher understand
+the current research landscape around a topic.
 
 IMPORTANT RULES:
 
-1. Use ONLY the information contained in the provided context.
-2. Do not invent papers.
-3. Do not invent authors.
-4. Do not invent statistics.
-5. Do not invent experimental results.
-6. Do not create citations that are not present in the context.
-7. Clearly distinguish between information supported by the
-   papers and reasonable future research suggestions.
-8. If the available papers are insufficient to support a claim,
-   explicitly say that the available evidence is insufficient.
+1. Use ONLY the research paper information provided
+   in the context below.
+
+2. Do NOT invent papers.
+
+3. Do NOT invent authors.
+
+4. Do NOT invent statistics.
+
+5. Do NOT invent experimental results.
+
+6. Do NOT create fake citations.
+
+7. If the retrieved papers do not provide enough
+   evidence for a statement, clearly say so.
+
+8. Separate existing findings from your suggested
+   future research directions.
 
 RESEARCH TOPIC:
 
 {topic}
 
 
-RETRIEVED RESEARCH PAPERS:
+RETRIEVED PAPERS:
 
 {context}
 
 
-TASK:
+Please produce the following:
+
 
 ## 1. Literature Review
 
-Provide a concise academic synthesis of the retrieved papers.
+Give a concise academic synthesis of the retrieved papers.
 
-Explain:
+Discuss:
 
-- What the papers study
-- The main approaches used
-- The common themes
+- Main research areas
+- Common themes
+- Approaches used
 - Important differences between the papers
 
 
 ## 2. Key Insights
 
-Identify the most important insights from the retrieved papers.
-
-Use clear bullet points.
+List the major insights from the retrieved papers.
 
 
 ## 3. Research Gaps
 
-Identify research gaps or limitations that can reasonably
-be inferred from the provided papers.
-
-Do not invent unsupported gaps.
+Identify possible research gaps based ONLY on the
+provided papers.
 
 
 ## 4. Future Scope
 
 Suggest possible future research directions.
 
-Clearly distinguish these suggestions from findings
-reported in the papers.
+Clearly indicate that these are suggestions rather
+than findings directly reported by the papers.
 
 
 ## 5. Research Questions
 
-Generate exactly 3 research questions based on the
-identified research gaps.
+Generate exactly 3 research questions based on
+the identified research gaps.
 
 
-## 6. Short Conclusion
+## 6. Conclusion
 
-Provide a short academic conclusion summarizing
-the overall research landscape.
+Provide a short academic conclusion.
 
 
-Keep the response:
-
-- Academic
-- Structured
-- Clear
-- Concise
-- Evidence-based
-- Free from hallucinated information
+Use clear academic language and structured Markdown.
 """
 
 
     # ========================================================
-    # GEMINI GENERATION
+    # GENERATE AI RESPONSE
     # ========================================================
 
     st.info(
-        "🤖 AI is analyzing the retrieved research papers..."
+        "🤖 AI is analyzing the retrieved papers..."
     )
 
     try:
@@ -643,8 +624,7 @@ Keep the response:
         )
 
         st.info(
-            "Please wait a few moments and try again. "
-            "Temporary Gemini capacity issues can occur."
+            "Please wait a little while and try again."
         )
 
         st.stop()
