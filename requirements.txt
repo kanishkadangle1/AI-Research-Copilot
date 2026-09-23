@@ -1,6 +1,7 @@
 streamlit
-google-generativeai
+google-genai
 requests
 faiss-cpu
 sentence-transformers
 numpy
+scikit-learn
