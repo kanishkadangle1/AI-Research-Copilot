@@ -74,8 +74,18 @@ except Exception:
 # UI
 # ============================================================
 
-st.title("AI Research Copilot")
-st.write("Research intelligence for discovering, analyzing, and connecting academic knowledge.")
+st.markdown(
+    "<h1 style='text-align:center;'>AI Research Copilot</h1>",
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    "<p style='text-align:center; color:#94A3B8; font-size:18px;'>"
+    "Discover research. Understand evidence. Find what comes next."
+    "</p>",
+    unsafe_allow_html=True
+)
+
 
 
 # ============================================================
@@ -86,7 +96,8 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     url = (
         "https://export.arxiv.org/api/query?"
-        f"search_query=all:{topic}"
+        f"search_query=all:{topic.replace(' ', '+')}"
+
         f"&start=0"
         f"&max_results={max_results}"
     )
@@ -241,9 +252,16 @@ def generate_with_gemini(prompt):
 # ============================================================
 
 topic = st.text_input(
-    "Enter Research Topic",
-    placeholder="e.g. Large Language Models"
+    "Research topic",
+    placeholder="e.g. Large language models for healthcare, AI agents, quantum computing..."
 )
+
+research_mode = st.radio(
+    "Research depth",
+    ["Quick", "Standard", "Deep"],
+    horizontal=True
+)
+
 
 
 # ============================================================
@@ -251,7 +269,7 @@ topic = st.text_input(
 # ============================================================
 
 if st.button(
-    "Generate Research Report",
+    "Start Research",
     type="primary"
 ):
 
@@ -272,16 +290,24 @@ if st.button(
     # FETCH PAPERS
     # --------------------------------------------------------
 
-    st.info(
-        "📄 Fetching papers from arXiv..."
-    )
+   st.info(
+    f"Research mode: {research_mode} | Fetching academic papers..."
+)
+
 
     try:
 
-        papers = fetch_arxiv_papers(
-            topic,
-            max_results=5
-        )
+    if research_mode == "Quick":
+        max_papers = 5
+    elif research_mode == "Standard":
+        max_papers = 10
+    else:
+        max_papers = 20
+
+    papers = fetch_arxiv_papers(
+        topic,
+        max_results=max_papers
+    )
 
     except Exception:
 
@@ -307,14 +333,23 @@ if st.button(
     # --------------------------------------------------------
 
     st.info(
-        "🔎 Running RAG retrieval..."
-    )
+    f"Research mode: {research_mode} | Analyzing paper relevance..."
+)
 
-    top_papers = hybrid_retrieve(
-        papers,
-        topic,
-        top_k=3
-    )
+
+    if research_mode == "Quick":
+    top_k = 3
+elif research_mode == "Standard":
+    top_k = 5
+else:
+    top_k = 10
+
+top_papers = hybrid_retrieve(
+    papers,
+    topic,
+    top_k=top_k
+)
+
 
 
     # --------------------------------------------------------
@@ -394,9 +429,10 @@ Use clear academic language and Markdown.
     # GEMINI
     # --------------------------------------------------------
 
-    st.info(
-        "🤖 AI is analyzing the retrieved papers..."
-    )
+   st.info(
+    "AI is synthesizing the research evidence..."
+)
+
 
     try:
 
