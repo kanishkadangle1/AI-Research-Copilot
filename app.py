@@ -290,9 +290,7 @@ if st.button(
     # FETCH PAPERS
     # --------------------------------------------------------
 
-   st.info(
-    f"Research mode: {research_mode} | Fetching academic papers..."
-)
+   st.info(f"Research mode: {research_mode} | Fetching academic papers...")
 
 
     try:
