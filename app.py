@@ -118,7 +118,7 @@ def fetch_arxiv_papers(
 
     response = requests.get(
         url,
-        timeout=30
+        timeout=60
     )
 
     response.raise_for_status()
