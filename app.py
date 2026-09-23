@@ -419,24 +419,29 @@ academic, and evidence-based.
     # --------------------------------------------------------
 
 # ============================================================
-# DISPLAY RETRIEVED PAPERS
+# DISPLAY RESULTS
 # ============================================================
 
-st.subheader("📚 Top Retrieved Papers")
+if "top_papers" in locals() and "result" in locals():
 
-for index, paper in enumerate(
-    top_papers,
-    start=1
-):
+    st.subheader("📚 Top Retrieved Papers")
 
-    with st.expander(
-        f"{index}. {paper['title']}"
+    for index, paper in enumerate(
+        top_papers,
+        start=1
     ):
 
-        st.write(
-            paper["abstract"]
-        )
+        with st.expander(
+            f"{index}. {paper['title']}"
+        ):
 
+            st.write(
+                paper["abstract"]
+            )
+
+    st.subheader("🧠 AI Research Output")
+
+    st.markdown(result)
 
 # ============================================================
 # DISPLAY AI OUTPUT
