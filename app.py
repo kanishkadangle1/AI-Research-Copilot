@@ -15,9 +15,46 @@ from google import genai
 
 st.set_page_config(
     page_title="AI Research Copilot",
-    page_icon="📚",
     layout="wide"
 )
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #0B1220;
+        color: #E5E7EB;
+    }
+
+    h1, h2, h3 {
+        color: #F8FAFC;
+    }
+
+    .stTextInput > div > div > input {
+        background-color: #111827;
+        color: #F8FAFC;
+        border: 1px solid #334155;
+        border-radius: 10px;
+    }
+
+    .stButton > button {
+        background-color: #2563EB;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+    }
+
+    .stButton > button:hover {
+        background-color: #1D4ED8;
+    }
+
+    [data-testid="stExpander"] {
+        background-color: #111827;
+        border: 1px solid #334155;
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ============================================================
