@@ -314,7 +314,6 @@ if st.button(
         )
 
     except Exception as e:
-
     st.error(
         f"Could not fetch papers from arXiv: {e}"
     )
