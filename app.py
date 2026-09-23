@@ -27,14 +27,6 @@ st.set_page_config(
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-except Exception:
-    st.error(
-        "GEMINI_API_KEY was not found in Streamlit Secrets."
-    )
-    st.stop()
-
-
-try:
     client = genai.Client(
         api_key=GEMINI_API_KEY
     )
@@ -110,12 +102,10 @@ def fetch_arxiv_papers(topic, max_results=5):
         title = title_element.text or ""
         abstract = abstract_element.text or ""
 
-        papers.append(
-            {
-                "title": title.strip(),
-                "abstract": abstract.strip()
-            }
-        )
+        papers.append({
+            "title": title.strip(),
+            "abstract": abstract.strip()
+        })
 
     return papers
 
@@ -165,101 +155,19 @@ def hybrid_retrieve(
 
 
 # ============================================================
-# GET AVAILABLE GEMINI MODELS
-# ============================================================
-
-def get_available_gemini_models():
-
-    try:
-
-        available_models = []
-
-        for model in client.models.list():
-
-            model_name = model.name
-
-            if model_name.startswith("models/"):
-                model_name = model_name.replace(
-                    "models/",
-                    "",
-                    1
-                )
-
-            # Store every model returned by the API.
-            # We will inspect the names and prefer Flash.
-            available_models.append(
-                model_name
-            )
-
-        return available_models
-
-    except Exception as e:
-
-        st.error(
-            f"Could not retrieve Gemini models: {e}"
-        )
-
-        return []
-
-
-# ============================================================
-# SELECT GEMINI MODEL
-# ============================================================
-
-def select_gemini_model():
-
-    models = get_available_gemini_models()
-
-    if not models:
-        return None
-
-    # Prefer Flash models because they are generally
-    # appropriate for a fast research assistant.
-
-    flash_models = [
-        model
-        for model in models
-        if "flash" in model.lower()
-    ]
-
-    if flash_models:
-
-        # Sort so newer-looking model names
-        # are considered first.
-
-        flash_models.sort(
-            reverse=True
-        )
-
-        return flash_models[0]
-
-    # If no Flash model is available,
-    # use the first model returned by Gemini.
-
-    return models[0]
-
-
-# ============================================================
 # GEMINI GENERATION
 # ============================================================
 
 def generate_with_gemini(prompt):
 
-    model_name = select_gemini_model()
-
-    if not model_name:
-
-        raise RuntimeError(
-            "No Gemini model was found for your API key."
-        )
+    model_name = "gemini-2.5-flash"
 
     st.info(
         f"Using Gemini model: `{model_name}`"
     )
 
-    max_attempts = 4
-
-    for attempt in range(max_attempts):
+    # Try up to 3 times if Gemini temporarily returns 503
+    for attempt in range(3):
 
         try:
 
@@ -268,16 +176,10 @@ def generate_with_gemini(prompt):
                 contents=prompt
             )
 
-            if response is None:
+            if response is None or not response.text:
 
                 raise RuntimeError(
                     "Gemini returned an empty response."
-                )
-
-            if not response.text:
-
-                raise RuntimeError(
-                    "Gemini returned no text."
                 )
 
             return response.text
@@ -286,34 +188,27 @@ def generate_with_gemini(prompt):
 
             error_message = str(e)
 
-            # ==================================================
-            # TEMPORARY 503 ERROR
-            # ==================================================
-
             if (
                 "503" in error_message
                 or "UNAVAILABLE" in error_message
             ):
 
-                if attempt < max_attempts - 1:
+                if attempt < 2:
 
                     wait_time = 2 ** attempt
 
                     st.warning(
-                        "Gemini is temporarily unavailable. "
+                        "Gemini is temporarily busy. "
                         f"Retrying in {wait_time} seconds..."
                     )
 
-                    time.sleep(
-                        wait_time
-                    )
+                    time.sleep(wait_time)
 
                 else:
 
                     raise RuntimeError(
-                        "Gemini is currently experiencing "
-                        "high demand or temporary capacity "
-                        "limitations. Please try again later."
+                        "Gemini is temporarily unavailable. "
+                        "Please try again in a few minutes."
                     )
 
             else:
@@ -321,44 +216,6 @@ def generate_with_gemini(prompt):
                 raise RuntimeError(
                     f"Gemini API error: {e}"
                 )
-
-
-# ============================================================
-# OPTIONAL MODEL DIAGNOSTIC
-# ============================================================
-
-with st.expander(
-    "🔧 Gemini API Diagnostics"
-):
-
-    st.write(
-        "Use this section to check which Gemini "
-        "models are available to your API key."
-    )
-
-    if st.button(
-        "Check Available Gemini Models"
-    ):
-
-        models = get_available_gemini_models()
-
-        if models:
-
-            st.success(
-                "Gemini models available to your API key:"
-            )
-
-            for model in models:
-
-                st.write(
-                    f"- `{model}`"
-                )
-
-        else:
-
-            st.error(
-                "No Gemini models were returned."
-            )
 
 
 # ============================================================
@@ -380,9 +237,9 @@ if st.button(
     type="primary"
 ):
 
-    # ========================================================
-    # VALIDATE TOPIC
-    # ========================================================
+    # --------------------------------------------------------
+    # VALIDATE INPUT
+    # --------------------------------------------------------
 
     if not topic.strip():
 
@@ -393,9 +250,9 @@ if st.button(
         st.stop()
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # FETCH PAPERS
-    # ========================================================
+    # --------------------------------------------------------
 
     st.info(
         "📄 Fetching papers from arXiv..."
@@ -408,64 +265,27 @@ if st.button(
             max_results=5
         )
 
-    except requests.exceptions.Timeout:
-
-        st.error(
-            "The arXiv request timed out. "
-            "Please try again."
-        )
-
-        st.stop()
-
-    except requests.exceptions.RequestException as e:
-
-        st.error(
-            f"Could not connect to arXiv: {e}"
-        )
-
-        st.stop()
-
-    except ET.ParseError:
-
-        st.error(
-            "arXiv returned an unexpected response. "
-            "Please try again."
-        )
-
-        st.stop()
-
     except Exception as e:
 
         st.error(
-            f"Could not fetch papers: {e}"
+            f"Could not fetch papers from arXiv: {e}"
         )
 
         st.stop()
 
-
-    # ========================================================
-    # CHECK PAPER RESULTS
-    # ========================================================
 
     if not papers:
 
         st.warning(
-            f"No research papers were found for: {topic}"
-        )
-
-        st.info(
-            "Try a broader topic, for example: "
-            "'Large Language Models', "
-            "'Artificial Intelligence', or "
-            "'Computer Vision'."
+            "No research papers were found."
         )
 
         st.stop()
 
 
-    # ========================================================
-    # RETRIEVAL
-    # ========================================================
+    # --------------------------------------------------------
+    # RAG RETRIEVAL
+    # --------------------------------------------------------
 
     st.info(
         "🔎 Running RAG retrieval..."
@@ -488,9 +308,9 @@ if st.button(
         st.stop()
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # BUILD CONTEXT
-    # ========================================================
+    # --------------------------------------------------------
 
     context = ""
 
@@ -500,7 +320,6 @@ if st.button(
     ):
 
         context += f"""
-
 PAPER {index}
 
 Title:
@@ -513,99 +332,68 @@ Abstract:
 """
 
 
-    # ========================================================
-    # GEMINI PROMPT
-    # ========================================================
+    # --------------------------------------------------------
+    # PROMPT
+    # --------------------------------------------------------
 
     prompt = f"""
 You are an expert academic research assistant.
 
-You are helping a student or researcher understand
-the current research landscape around a topic.
+Use ONLY the research paper information provided below.
 
-IMPORTANT RULES:
+Do not invent:
+- papers
+- authors
+- statistics
+- results
+- citations
+- facts
 
-1. Use ONLY the research paper information provided
-   in the context below.
+If the papers do not provide enough evidence,
+clearly say so.
 
-2. Do NOT invent papers.
-
-3. Do NOT invent authors.
-
-4. Do NOT invent statistics.
-
-5. Do NOT invent experimental results.
-
-6. Do NOT create fake citations.
-
-7. If the retrieved papers do not provide enough
-   evidence for a statement, clearly say so.
-
-8. Separate existing findings from your suggested
-   future research directions.
-
-RESEARCH TOPIC:
-
+Research Topic:
 {topic}
 
-
-RETRIEVED PAPERS:
-
+Retrieved Papers:
 {context}
 
-
-Please produce the following:
-
+Create a structured academic research report with:
 
 ## 1. Literature Review
 
-Give a concise academic synthesis of the retrieved papers.
-
-Discuss:
-
-- Main research areas
-- Common themes
-- Approaches used
-- Important differences between the papers
-
+Summarize the main research themes,
+approaches, and findings.
 
 ## 2. Key Insights
 
-List the major insights from the retrieved papers.
-
+List the major insights from the papers.
 
 ## 3. Research Gaps
 
-Identify possible research gaps based ONLY on the
-provided papers.
-
+Identify possible gaps based only on
+the retrieved papers.
 
 ## 4. Future Scope
 
-Suggest possible future research directions.
-
-Clearly indicate that these are suggestions rather
-than findings directly reported by the papers.
-
+Suggest reasonable future research directions.
 
 ## 5. Research Questions
 
-Generate exactly 3 research questions based on
-the identified research gaps.
-
+Generate exactly 3 research questions.
 
 ## 6. Conclusion
 
-Provide a short academic conclusion.
+Give a short academic conclusion.
 
-
-Use clear academic language and structured Markdown.
+Keep the response clear, concise,
+academic, and evidence-based.
 """
 
 
-    # ========================================================
-    # GENERATE AI RESPONSE
-    # ========================================================
+    # --------------------------------------------------------
+    # GEMINI
+    # --------------------------------------------------------
 
     st.info(
         "🤖 AI is analyzing the retrieved papers..."
@@ -623,43 +411,39 @@ Use clear academic language and structured Markdown.
             str(e)
         )
 
-        st.info(
-            "Please wait a little while and try again."
-        )
-
         st.stop()
 
 
-    # ========================================================
-    # DISPLAY RETRIEVED PAPERS
-    # ========================================================
+    # --------------------------------------------------------
+    # DISPLAY PAPERS
+    # --------------------------------------------------------
 
-    st.subheader(
-        "📚 Top Retrieved Papers"
-    )
+# ============================================================
+# DISPLAY RETRIEVED PAPERS
+# ============================================================
 
-    for index, paper in enumerate(
-        top_papers,
-        start=1
+st.subheader("📚 Top Retrieved Papers")
+
+for index, paper in enumerate(
+    top_papers,
+    start=1
+):
+
+    with st.expander(
+        f"{index}. {paper['title']}"
     ):
 
-        with st.expander(
-            f"{index}. {paper['title']}"
-        ):
-
-            st.write(
-                paper["abstract"]
-            )
+        st.write(
+            paper["abstract"]
+        )
 
 
-    # ========================================================
-    # DISPLAY AI OUTPUT
-    # ========================================================
+# ============================================================
+# DISPLAY AI OUTPUT
+# ============================================================
 
-    st.subheader(
-        "🧠 AI Research Output"
-    )
+st.subheader("🧠 AI Research Output")
 
-    st.markdown(
-        result
-    )
+st.markdown(
+    result
+)
