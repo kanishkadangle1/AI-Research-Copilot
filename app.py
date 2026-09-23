@@ -17,6 +17,7 @@ st.set_page_config(
     page_title="AI Research Copilot",
     layout="wide"
 )
+
 st.markdown("""
 <style>
 .stApp {
@@ -56,7 +57,6 @@ h1, h2, h3 {
 """, unsafe_allow_html=True)
 
 
-
 # ============================================================
 # GEMINI CONFIG
 # ============================================================
@@ -87,7 +87,6 @@ st.markdown(
 )
 
 
-
 # ============================================================
 # ARXIV RETRIEVAL
 # ============================================================
@@ -97,7 +96,6 @@ def fetch_arxiv_papers(topic, max_results=5):
     url = (
         "https://export.arxiv.org/api/query?"
         f"search_query=all:{topic.replace(' ', '+')}"
-
         f"&start=0"
         f"&max_results={max_results}"
     )
@@ -231,7 +229,9 @@ def generate_with_gemini(prompt):
 
                     wait_time = 2 ** attempt
 
-                    time.sleep(wait_time)
+                    time.sleep(
+                        wait_time
+                    )
 
                 else:
 
@@ -253,7 +253,10 @@ def generate_with_gemini(prompt):
 
 topic = st.text_input(
     "Research topic",
-    placeholder="e.g. Large language models for healthcare, AI agents, quantum computing..."
+    placeholder=(
+        "e.g. Large language models for healthcare, "
+        "AI agents, quantum computing..."
+    )
 )
 
 research_mode = st.radio(
@@ -261,7 +264,6 @@ research_mode = st.radio(
     ["Quick", "Standard", "Deep"],
     horizontal=True
 )
-
 
 
 # ============================================================
@@ -273,9 +275,9 @@ if st.button(
     type="primary"
 ):
 
-    # --------------------------------------------------------
+    # ========================================================
     # VALIDATE INPUT
-    # --------------------------------------------------------
+    # ========================================================
 
     if not topic.strip():
 
@@ -286,26 +288,30 @@ if st.button(
         st.stop()
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # FETCH PAPERS
-    # --------------------------------------------------------
+    # ========================================================
 
-       st.info(f"Research mode: {research_mode} | Fetching academic papers...")
-
+    st.info(
+        f"Research mode: {research_mode} | "
+        "Fetching academic papers..."
+    )
 
     try:
 
-    if research_mode == "Quick":
-        max_papers = 5
-    elif research_mode == "Standard":
-        max_papers = 10
-    else:
-        max_papers = 20
+        if research_mode == "Quick":
+            max_papers = 5
 
-    papers = fetch_arxiv_papers(
-        topic,
-        max_results=max_papers
-    )
+        elif research_mode == "Standard":
+            max_papers = 10
+
+        else:
+            max_papers = 20
+
+        papers = fetch_arxiv_papers(
+            topic,
+            max_results=max_papers
+        )
 
     except Exception:
 
@@ -317,6 +323,10 @@ if st.button(
         st.stop()
 
 
+    # ========================================================
+    # CHECK PAPERS
+    # ========================================================
+
     if not papers:
 
         st.warning(
@@ -326,33 +336,41 @@ if st.button(
         st.stop()
 
 
-    # --------------------------------------------------------
+       # ========================================================
     # RETRIEVAL
-    # --------------------------------------------------------
+    # ========================================================
 
     st.info(
-    f"Research mode: {research_mode} | Analyzing paper relevance..."
-)
+        f"Research mode: {research_mode} | Analyzing paper relevance..."
+    )
+
+    try:
+
+        if research_mode == "Quick":
+            top_k = 3
+        elif research_mode == "Standard":
+            top_k = 5
+        else:
+            top_k = 10
+
+        top_papers = hybrid_retrieve(
+            papers,
+            topic,
+            top_k=top_k
+        )
+
+    except Exception as e:
+
+        st.error(
+            f"Retrieval error: {e}"
+        )
+
+        st.stop()
 
 
-    if research_mode == "Quick":
-    top_k = 3
-elif research_mode == "Standard":
-    top_k = 5
-else:
-    top_k = 10
-
-top_papers = hybrid_retrieve(
-    papers,
-    topic,
-    top_k=top_k
-)
-
-
-
-    # --------------------------------------------------------
+    # ========================================================
     # BUILD CONTEXT
-    # --------------------------------------------------------
+    # ========================================================
 
     context = ""
 
@@ -375,9 +393,9 @@ Abstract:
 """
 
 
-    # --------------------------------------------------------
-    # PROMPT
-    # --------------------------------------------------------
+    # ========================================================
+    # GEMINI PROMPT
+    # ========================================================
 
     prompt = f"""
 You are an expert academic research assistant.
@@ -390,6 +408,9 @@ experimental results, or citations.
 Research Topic:
 {topic}
 
+Research Mode:
+{research_mode}
+
 Retrieved Papers:
 {context}
 
@@ -401,36 +422,38 @@ Give a concise synthesis of the retrieved papers.
 
 ## 2. Key Insights
 
-List the major insights.
+List the major insights from the papers.
 
 ## 3. Research Gaps
 
-Identify gaps based only on the retrieved papers.
+Identify research gaps based ONLY on the
+retrieved papers.
 
 ## 4. Future Scope
 
 Suggest possible future research directions.
+Clearly distinguish suggestions from findings.
 
 ## 5. Research Questions
 
-Generate exactly 3 research questions.
+Generate exactly 3 research questions based
+on the identified research gaps.
 
 ## 6. Conclusion
 
 Give a short academic conclusion.
 
-Use clear academic language and Markdown.
+Use clear academic language and structured Markdown.
 """
 
 
-    # --------------------------------------------------------
-    # GEMINI
-    # --------------------------------------------------------
+    # ========================================================
+    # GEMINI GENERATION
+    # ========================================================
 
-   st.info(
-    "AI is synthesizing the research evidence..."
-)
-
+    st.info(
+        "AI is synthesizing the research evidence..."
+    )
 
     try:
 
@@ -440,16 +463,19 @@ Use clear academic language and Markdown.
 
     except Exception as e:
 
-        st.error(str(e))
+        st.error(
+            str(e)
+        )
+
         st.stop()
 
 
-    # --------------------------------------------------------
-    # DISPLAY PAPERS
-    # --------------------------------------------------------
+    # ========================================================
+    # DISPLAY RETRIEVED PAPERS
+    # ========================================================
 
     st.subheader(
-        "📚 Top Retrieved Papers"
+        "Top Retrieved Papers"
     )
 
     for index, paper in enumerate(
@@ -466,12 +492,12 @@ Use clear academic language and Markdown.
             )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # DISPLAY AI OUTPUT
-    # --------------------------------------------------------
+    # ========================================================
 
     st.subheader(
-        "🧠 AI Research Output"
+        "AI Research Output"
     )
 
     st.markdown(
