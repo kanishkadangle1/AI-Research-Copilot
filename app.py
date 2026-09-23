@@ -1,4 +1,3 @@
-import time
 import requests
 import xml.etree.ElementTree as ET
 
@@ -20,83 +19,39 @@ st.set_page_config(
 
 
 # ============================================================
-# PROFESSIONAL THEME
-# ============================================================
-
-st.markdown("""
-<style>
-
-.stApp {
-    background-color: #0B1220;
-    color: #E5E7EB;
-}
-
-h1, h2, h3 {
-    color: #F8FAFC;
-}
-
-.stTextInput input {
-    background-color: #111827;
-    color: #F8FAFC;
-    border: 1px solid #334155;
-    border-radius: 10px;
-}
-
-.stButton > button {
-    background-color: #2563EB;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-}
-
-.stButton > button:hover {
-    background-color: #1D4ED8;
-}
-
-[data-testid="stExpander"] {
-    background-color: #111827;
-    border: 1px solid #334155;
-    border-radius: 10px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================
-# GEMINI CONFIG
+# GEMINI CONFIGURATION
 # ============================================================
 
 try:
-
-    client = genai.Client(
-        api_key=st.secrets["GEMINI_API_KEY"]
-    )
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 except Exception:
-
     st.error(
-        "Gemini API configuration error."
+        "GEMINI_API_KEY was not found in Streamlit Secrets."
+    )
+    st.stop()
+
+
+try:
+    client = genai.Client(
+        api_key=GEMINI_API_KEY
     )
 
+except Exception as e:
+    st.error(
+        f"Could not initialize Gemini: {e}"
+    )
     st.stop()
 
 
 # ============================================================
-# HEADER
+# UI
 # ============================================================
 
-st.markdown(
-    "<h1 style='text-align:center;'>AI Research Copilot</h1>",
-    unsafe_allow_html=True
-)
+st.title("AI Research Copilot")
 
-st.markdown(
-    "<p style='text-align:center; color:#94A3B8; font-size:18px;'>"
-    "Discover research. Understand evidence. Find what comes next."
-    "</p>",
-    unsafe_allow_html=True
+st.write(
+    "A research assistant for discovering and synthesizing academic papers."
 )
 
 
@@ -104,10 +59,7 @@ st.markdown(
 # ARXIV PAPER RETRIEVAL
 # ============================================================
 
-def fetch_arxiv_papers(
-    topic,
-    max_results=5
-):
+def fetch_arxiv_papers(topic, max_results=5):
 
     url = (
         "https://export.arxiv.org/api/query?"
@@ -116,19 +68,10 @@ def fetch_arxiv_papers(
         f"&max_results={max_results}"
     )
 
-    headers = {
-        "User-Agent": "AIResearchCopilot/1.0"
-    }
-
     response = requests.get(
         url,
-        headers=headers,
-        timeout=60
+        timeout=30
     )
-
-    response.raise_for_status()
-
-
 
     response.raise_for_status()
 
@@ -136,11 +79,11 @@ def fetch_arxiv_papers(
         response.content
     )
 
+    papers = []
+
     namespace = {
         "atom": "http://www.w3.org/2005/Atom"
     }
-
-    papers = []
 
     for entry in root.findall(
         "atom:entry",
@@ -163,18 +106,13 @@ def fetch_arxiv_papers(
         ):
             continue
 
-        title = (
-            title_element.text or ""
-        ).strip()
-
-        abstract = (
-            abstract_element.text or ""
-        ).strip()
+        title = title_element.text or ""
+        abstract = abstract_element.text or ""
 
         papers.append(
             {
-                "title": title,
-                "abstract": abstract
+                "title": title.strip(),
+                "abstract": abstract.strip()
             }
         )
 
@@ -182,7 +120,7 @@ def fetch_arxiv_papers(
 
 
 # ============================================================
-# TF-IDF RETRIEVAL
+# TF-IDF PAPER RETRIEVAL
 # ============================================================
 
 def hybrid_retrieve(
@@ -203,13 +141,13 @@ def hybrid_retrieve(
         stop_words="english"
     )
 
-    matrix = vectorizer.fit_transform(
+    tfidf_matrix = vectorizer.fit_transform(
         documents + [query]
     )
 
-    query_vector = matrix[-1]
+    query_vector = tfidf_matrix[-1]
 
-    document_vectors = matrix[:-1]
+    document_vectors = tfidf_matrix[:-1]
 
     scores = (
         document_vectors @ query_vector.T
@@ -231,90 +169,48 @@ def hybrid_retrieve(
 
 def generate_with_gemini(prompt):
 
-    model_name = "gemini-2.5-flash"
+    try:
 
-    for attempt in range(3):
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
 
-        try:
-
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-
-            if response and response.text:
-
-                return response.text
-
+        if response is None:
             raise RuntimeError(
                 "Gemini returned an empty response."
             )
 
-        except Exception as e:
+        if not response.text:
+            raise RuntimeError(
+                "Gemini returned no text."
+            )
 
-            error_message = str(e)
+        return response.text
 
-            if (
-                "503" in error_message
-                or "UNAVAILABLE" in error_message
-            ):
+    except Exception as e:
 
-                if attempt < 2:
-
-                    wait_time = 2 ** attempt
-
-                    time.sleep(
-                        wait_time
-                    )
-
-                else:
-
-                    raise RuntimeError(
-                        "Gemini is temporarily unavailable. "
-                        "Please try again later."
-                    )
-
-            else:
-
-                raise RuntimeError(
-                    f"Gemini API error: {e}"
-                )
+        raise RuntimeError(
+            f"Gemini API error: {e}"
+        )
 
 
 # ============================================================
-# RESEARCH INPUT
+# USER INPUT
 # ============================================================
 
 topic = st.text_input(
-    "Research topic",
-    placeholder=(
-        "e.g. Large language models for healthcare, "
-        "AI agents, quantum computing..."
-    )
+    "Research Topic",
+    placeholder="e.g. Large Language Models"
 )
 
 
 # ============================================================
-# RESEARCH DEPTH
-# ============================================================
-
-research_mode = st.radio(
-    "Research depth",
-    [
-        "Quick",
-        "Standard",
-        "Deep"
-    ],
-    horizontal=True
-)
-
-
-# ============================================================
-# START RESEARCH
+# MAIN APPLICATION
 # ============================================================
 
 if st.button(
-    "Start Research",
+    "Generate Research Report",
     type="primary"
 ):
 
@@ -336,33 +232,46 @@ if st.button(
     # ========================================================
 
     st.info(
-        f"Research mode: {research_mode} | "
         "Fetching academic papers..."
     )
 
     try:
 
-        if research_mode == "Quick":
-
-            max_papers = 5
-
-        elif research_mode == "Standard":
-
-            max_papers = 10
-
-        else:
-
-            max_papers = 20
-
         papers = fetch_arxiv_papers(
             topic,
-            max_results=max_papers
+            max_results=5
         )
 
-    except Exception as e:
+    except requests.exceptions.Timeout:
 
         st.error(
-            f"Could not fetch papers from arXiv: {e}"
+            "The arXiv service took too long to respond. "
+            "Please try again in a moment."
+        )
+
+        st.stop()
+
+    except requests.exceptions.RequestException:
+
+        st.error(
+            "Could not connect to the academic paper service. "
+            "Please try again in a moment."
+        )
+
+        st.stop()
+
+    except ET.ParseError:
+
+        st.error(
+            "The paper service returned an unexpected response."
+        )
+
+        st.stop()
+
+    except Exception:
+
+        st.error(
+            "Unable to retrieve research papers right now."
         )
 
         st.stop()
@@ -375,45 +284,32 @@ if st.button(
     if not papers:
 
         st.warning(
-            "No research papers were found."
+            "No research papers were found for this topic."
         )
 
         st.stop()
 
 
     # ========================================================
-    # RETRIEVAL
+    # RAG RETRIEVAL
     # ========================================================
 
     st.info(
-        f"Research mode: {research_mode} | "
-        "Analyzing paper relevance..."
+        "Finding the most relevant papers..."
     )
 
     try:
 
-        if research_mode == "Quick":
-
-            top_k = 3
-
-        elif research_mode == "Standard":
-
-            top_k = 5
-
-        else:
-
-            top_k = 10
-
         top_papers = hybrid_retrieve(
             papers,
             topic,
-            top_k=top_k
+            top_k=3
         )
 
-    except Exception as e:
+    except Exception:
 
         st.error(
-            f"Retrieval error: {e}"
+            "Unable to rank the retrieved papers."
         )
 
         st.stop()
@@ -444,7 +340,7 @@ Abstract:
 """
 
 
-        # ========================================================
+      # ========================================================
     # GEMINI PROMPT
     # ========================================================
 
@@ -487,12 +383,12 @@ Clearly distinguish suggestions from findings.
 
 ## 5. Research Questions
 
-Generate exactly 3 research questions based
-on the identified research gaps.
+Generate exactly 3 research questions based on
+the identified research gaps.
 
 ## 6. Conclusion
 
-Give a short academic conclusion.
+Provide a short academic conclusion.
 
 Use clear academic language and structured Markdown.
 """
@@ -515,7 +411,7 @@ Use clear academic language and structured Markdown.
     except Exception as e:
 
         st.error(
-            str(e)
+            f"AI generation failed: {e}"
         )
 
         st.stop()
