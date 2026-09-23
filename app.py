@@ -74,8 +74,8 @@ except Exception:
 # UI
 # ============================================================
 
-st.title("📚 AI Research Copilot")
-st.write("A hybrid retrieval + LLM research assistant")
+st.title("AI Research Copilot")
+st.write("Research intelligence for discovering, analyzing, and connecting academic knowledge."))
 
 
 # ============================================================
