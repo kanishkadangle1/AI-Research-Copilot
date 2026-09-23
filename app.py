@@ -116,15 +116,18 @@ def fetch_arxiv_papers(
         f"&max_results={max_results}"
     )
 
-headers = {
-    "User-Agent": "AIResearchCopilot/1.0"
-}
+    headers = {
+        "User-Agent": "AIResearchCopilot/1.0"
+    }
 
-response = requests.get(
-    url,
-    headers=headers,
-    timeout=60
-)
+    response = requests.get(
+        url,
+        headers=headers,
+        timeout=60
+    )
+
+    response.raise_for_status()
+
 
 
     response.raise_for_status()
