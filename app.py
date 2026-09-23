@@ -1,3 +1,4 @@
+import time
 import requests
 import xml.etree.ElementTree as ET
 
@@ -19,39 +20,96 @@ st.set_page_config(
 
 
 # ============================================================
+# PROFESSIONAL UI
+# ============================================================
+
+st.markdown("""
+<style>
+
+.stApp {
+    background-color: #0B1220;
+    color: #E5E7EB;
+}
+
+h1, h2, h3 {
+    color: #F8FAFC;
+}
+
+.stTextInput input {
+    background-color: #111827;
+    color: #F8FAFC;
+    border: 1px solid #334155;
+    border-radius: 10px;
+}
+
+.stButton > button {
+    background-color: #2563EB;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.stButton > button:hover {
+    background-color: #1D4ED8;
+}
+
+[data-testid="stExpander"] {
+    background-color: #111827;
+    border: 1px solid #334155;
+    border-radius: 10px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# ============================================================
 # GEMINI CONFIGURATION
 # ============================================================
 
 try:
+
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 except Exception:
+
     st.error(
         "GEMINI_API_KEY was not found in Streamlit Secrets."
     )
+
     st.stop()
 
 
 try:
+
     client = genai.Client(
         api_key=GEMINI_API_KEY
     )
 
 except Exception as e:
+
     st.error(
         f"Could not initialize Gemini: {e}"
     )
+
     st.stop()
 
 
 # ============================================================
-# UI
+# UI HEADER
 # ============================================================
 
-st.title("AI Research Copilot")
+st.markdown(
+    "<h1 style='text-align:center;'>AI Research Copilot</h1>",
+    unsafe_allow_html=True
+)
 
-st.write(
-    "A research assistant for discovering and synthesizing academic papers."
+st.markdown(
+    "<p style='text-align:center; color:#94A3B8; font-size:18px;'>"
+    "Discover research. Understand evidence. Find what comes next."
+    "</p>",
+    unsafe_allow_html=True
 )
 
 
@@ -68,9 +126,14 @@ def fetch_arxiv_papers(topic, max_results=5):
         f"&max_results={max_results}"
     )
 
+    headers = {
+        "User-Agent": "AIResearchCopilot/1.0"
+    }
+
     response = requests.get(
         url,
-        timeout=30
+        headers=headers,
+        timeout=60
     )
 
     response.raise_for_status()
@@ -120,7 +183,7 @@ def fetch_arxiv_papers(topic, max_results=5):
 
 
 # ============================================================
-# TF-IDF PAPER RETRIEVAL
+# TF-IDF RETRIEVAL
 # ============================================================
 
 def hybrid_retrieve(
@@ -169,10 +232,13 @@ def hybrid_retrieve(
 
 def generate_with_gemini(prompt):
 
+    # Use one stable Flash model.
+    model_name = "gemini-2.5-flash"
+
     try:
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=model_name,
             contents=prompt
         )
 
@@ -190,6 +256,28 @@ def generate_with_gemini(prompt):
 
     except Exception as e:
 
+        error_message = str(e)
+
+        if (
+            "503" in error_message
+            or "UNAVAILABLE" in error_message
+        ):
+
+            raise RuntimeError(
+                "Gemini is temporarily unavailable. "
+                "Please try again in a few moments."
+            )
+
+        if (
+            "429" in error_message
+            or "RESOURCE_EXHAUSTED" in error_message
+        ):
+
+            raise RuntimeError(
+                "Gemini API usage is temporarily limited. "
+                "Please wait a little and try again."
+            )
+
         raise RuntimeError(
             f"Gemini API error: {e}"
         )
@@ -200,8 +288,22 @@ def generate_with_gemini(prompt):
 # ============================================================
 
 topic = st.text_input(
-    "Research Topic",
-    placeholder="e.g. Large Language Models"
+    "Research topic",
+    placeholder=(
+        "e.g. Large language models for healthcare, "
+        "AI agents, quantum computing..."
+    )
+)
+
+
+# ============================================================
+# RESEARCH MODE
+# ============================================================
+
+research_mode = st.radio(
+    "Research depth",
+    ["Quick", "Standard", "Deep"],
+    horizontal=True
 )
 
 
@@ -210,7 +312,7 @@ topic = st.text_input(
 # ============================================================
 
 if st.button(
-    "Generate Research Report",
+    "Start Research",
     type="primary"
 ):
 
@@ -228,6 +330,26 @@ if st.button(
 
 
     # ========================================================
+    # DETERMINE PAPER COUNT
+    # ========================================================
+
+    if research_mode == "Quick":
+
+        max_papers = 5
+        top_k = 3
+
+    elif research_mode == "Standard":
+
+        max_papers = 10
+        top_k = 5
+
+    else:
+
+        max_papers = 20
+        top_k = 10
+
+
+    # ========================================================
     # FETCH PAPERS
     # ========================================================
 
@@ -239,23 +361,39 @@ if st.button(
 
         papers = fetch_arxiv_papers(
             topic,
-            max_results=5
+            max_results=max_papers
         )
 
     except requests.exceptions.Timeout:
 
         st.error(
-            "The arXiv service took too long to respond. "
-            "Please try again in a moment."
+            "The arXiv request timed out. "
+            "Please try again."
         )
 
         st.stop()
 
-    except requests.exceptions.RequestException:
+    except requests.exceptions.HTTPError as e:
+
+        if "429" in str(e):
+
+            st.error(
+                "arXiv is temporarily rate-limiting requests. "
+                "Please wait a few minutes and try again."
+            )
+
+        else:
+
+            st.error(
+                f"arXiv returned an HTTP error: {e}"
+            )
+
+        st.stop()
+
+    except requests.exceptions.RequestException as e:
 
         st.error(
-            "Could not connect to the academic paper service. "
-            "Please try again in a moment."
+            f"Could not connect to arXiv: {e}"
         )
 
         st.stop()
@@ -263,15 +401,15 @@ if st.button(
     except ET.ParseError:
 
         st.error(
-            "The paper service returned an unexpected response."
+            "arXiv returned an unexpected response."
         )
 
         st.stop()
 
-    except Exception:
+    except Exception as e:
 
         st.error(
-            "Unable to retrieve research papers right now."
+            f"Could not fetch papers from arXiv: {e}"
         )
 
         st.stop()
@@ -284,32 +422,39 @@ if st.button(
     if not papers:
 
         st.warning(
-            "No research papers were found for this topic."
+            "No research papers were found."
         )
 
         st.stop()
 
 
-    # ========================================================
+       # ========================================================
     # RAG RETRIEVAL
     # ========================================================
 
     st.info(
-        "Finding the most relevant papers..."
+        f"Research mode: {research_mode} | Analyzing paper relevance..."
     )
 
     try:
 
+        if research_mode == "Quick":
+            top_k = 3
+        elif research_mode == "Standard":
+            top_k = 5
+        else:
+            top_k = 10
+
         top_papers = hybrid_retrieve(
             papers,
             topic,
-            top_k=3
+            top_k=top_k
         )
 
-    except Exception:
+    except Exception as e:
 
         st.error(
-            "Unable to rank the retrieved papers."
+            f"Retrieval error: {e}"
         )
 
         st.stop()
@@ -327,7 +472,6 @@ if st.button(
     ):
 
         context += f"""
-
 PAPER {index}
 
 Title:
@@ -340,7 +484,7 @@ Abstract:
 """
 
 
-      # ========================================================
+    # ========================================================
     # GEMINI PROMPT
     # ========================================================
 
