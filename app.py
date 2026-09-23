@@ -95,7 +95,7 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     url = (
         "https://export.arxiv.org/api/query?"
-        f"search_query=all:{topic.replace(' ', '+')}"
+       f"search_query=all:{topic}"
         f"&start=0"
         f"&max_results={max_results}"
     )
