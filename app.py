@@ -21,20 +21,15 @@ st.set_page_config(
 
 
 # ============================================================
-# GEMINI CONFIGURATION
+# GEMINI CONFIG
 # ============================================================
 
 try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-
     client = genai.Client(
-        api_key=GEMINI_API_KEY
+        api_key=st.secrets["GEMINI_API_KEY"]
     )
-
-except Exception as e:
-    st.error(
-        f"Could not initialize Gemini: {e}"
-    )
+except Exception:
+    st.error("Gemini API configuration error.")
     st.stop()
 
 
@@ -43,13 +38,11 @@ except Exception as e:
 # ============================================================
 
 st.title("📚 AI Research Copilot")
-st.write(
-    "A hybrid retrieval + LLM research assistant"
-)
+st.write("A hybrid retrieval + LLM research assistant")
 
 
 # ============================================================
-# ARXIV PAPER RETRIEVAL
+# ARXIV RETRIEVAL
 # ============================================================
 
 def fetch_arxiv_papers(topic, max_results=5):
@@ -68,15 +61,13 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     response.raise_for_status()
 
-    root = ET.fromstring(
-        response.content
-    )
-
-    papers = []
+    root = ET.fromstring(response.content)
 
     namespace = {
         "atom": "http://www.w3.org/2005/Atom"
     }
+
+    papers = []
 
     for entry in root.findall(
         "atom:entry",
@@ -99,12 +90,14 @@ def fetch_arxiv_papers(topic, max_results=5):
         ):
             continue
 
-        title = title_element.text or ""
-        abstract = abstract_element.text or ""
-
         papers.append({
-            "title": title.strip(),
-            "abstract": abstract.strip()
+            "title": (
+                title_element.text or ""
+            ).strip(),
+
+            "abstract": (
+                abstract_element.text or ""
+            ).strip()
         })
 
     return papers
@@ -132,13 +125,12 @@ def hybrid_retrieve(
         stop_words="english"
     )
 
-    tfidf_matrix = vectorizer.fit_transform(
+    matrix = vectorizer.fit_transform(
         documents + [query]
     )
 
-    query_vector = tfidf_matrix[-1]
-
-    document_vectors = tfidf_matrix[:-1]
+    query_vector = matrix[-1]
+    document_vectors = matrix[:-1]
 
     scores = (
         document_vectors @ query_vector.T
@@ -162,11 +154,6 @@ def generate_with_gemini(prompt):
 
     model_name = "gemini-2.5-flash"
 
-    st.info(
-        f"Using Gemini model: `{model_name}`"
-    )
-
-    # Try up to 3 times if Gemini temporarily returns 503
     for attempt in range(3):
 
         try:
@@ -176,13 +163,12 @@ def generate_with_gemini(prompt):
                 contents=prompt
             )
 
-            if response is None or not response.text:
+            if response and response.text:
+                return response.text
 
-                raise RuntimeError(
-                    "Gemini returned an empty response."
-                )
-
-            return response.text
+            raise RuntimeError(
+                "Gemini returned an empty response."
+            )
 
         except Exception as e:
 
@@ -197,18 +183,13 @@ def generate_with_gemini(prompt):
 
                     wait_time = 2 ** attempt
 
-                    st.warning(
-                        "Gemini is temporarily busy. "
-                        f"Retrying in {wait_time} seconds..."
-                    )
-
                     time.sleep(wait_time)
 
                 else:
 
                     raise RuntimeError(
                         "Gemini is temporarily unavailable. "
-                        "Please try again in a few minutes."
+                        "Please try again later."
                     )
 
             else:
@@ -219,7 +200,7 @@ def generate_with_gemini(prompt):
 
 
 # ============================================================
-# USER INPUT
+# INPUT
 # ============================================================
 
 topic = st.text_input(
@@ -265,10 +246,11 @@ if st.button(
             max_results=5
         )
 
-    except Exception as e:
+    except Exception:
 
         st.error(
-            f"Could not fetch papers from arXiv: {e}"
+            "Could not fetch papers from arXiv. "
+            "Please try again."
         )
 
         st.stop()
@@ -284,28 +266,18 @@ if st.button(
 
 
     # --------------------------------------------------------
-    # RAG RETRIEVAL
+    # RETRIEVAL
     # --------------------------------------------------------
 
     st.info(
         "🔎 Running RAG retrieval..."
     )
 
-    try:
-
-        top_papers = hybrid_retrieve(
-            papers,
-            topic,
-            top_k=3
-        )
-
-    except Exception as e:
-
-        st.error(
-            f"Retrieval error: {e}"
-        )
-
-        st.stop()
+    top_papers = hybrid_retrieve(
+        papers,
+        topic,
+        top_k=3
+    )
 
 
     # --------------------------------------------------------
@@ -320,6 +292,7 @@ if st.button(
     ):
 
         context += f"""
+
 PAPER {index}
 
 Title:
@@ -341,16 +314,8 @@ You are an expert academic research assistant.
 
 Use ONLY the research paper information provided below.
 
-Do not invent:
-- papers
-- authors
-- statistics
-- results
-- citations
-- facts
-
-If the papers do not provide enough evidence,
-clearly say so.
+Do not invent papers, authors, statistics,
+experimental results, or citations.
 
 Research Topic:
 {topic}
@@ -358,25 +323,23 @@ Research Topic:
 Retrieved Papers:
 {context}
 
-Create a structured academic research report with:
+Generate:
 
 ## 1. Literature Review
 
-Summarize the main research themes,
-approaches, and findings.
+Give a concise synthesis of the retrieved papers.
 
 ## 2. Key Insights
 
-List the major insights from the papers.
+List the major insights.
 
 ## 3. Research Gaps
 
-Identify possible gaps based only on
-the retrieved papers.
+Identify gaps based only on the retrieved papers.
 
 ## 4. Future Scope
 
-Suggest reasonable future research directions.
+Suggest possible future research directions.
 
 ## 5. Research Questions
 
@@ -386,8 +349,7 @@ Generate exactly 3 research questions.
 
 Give a short academic conclusion.
 
-Keep the response clear, concise,
-academic, and evidence-based.
+Use clear academic language and Markdown.
 """
 
 
@@ -407,10 +369,7 @@ academic, and evidence-based.
 
     except Exception as e:
 
-        st.error(
-            str(e)
-        )
-
+        st.error(str(e))
         st.stop()
 
 
@@ -418,13 +377,9 @@ academic, and evidence-based.
     # DISPLAY PAPERS
     # --------------------------------------------------------
 
-# ============================================================
-# DISPLAY RESULTS
-# ============================================================
-
-if "top_papers" in locals() and "result" in locals():
-
-    st.subheader("📚 Top Retrieved Papers")
+    st.subheader(
+        "📚 Top Retrieved Papers"
+    )
 
     for index, paper in enumerate(
         top_papers,
@@ -439,16 +394,15 @@ if "top_papers" in locals() and "result" in locals():
                 paper["abstract"]
             )
 
-    st.subheader("🧠 AI Research Output")
 
-    st.markdown(result)
+    # --------------------------------------------------------
+    # DISPLAY AI OUTPUT
+    # --------------------------------------------------------
 
-# ============================================================
-# DISPLAY AI OUTPUT
-# ============================================================
+    st.subheader(
+        "🧠 AI Research Output"
+    )
 
-st.subheader("🧠 AI Research Output")
-
-st.markdown(
-    result
-)
+    st.markdown(
+        result
+    )
