@@ -8,7 +8,6 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from google import genai
 
-
 # ============================================================
 # STREAMLIT CONFIG
 # ============================================================
@@ -153,59 +152,172 @@ def hybrid_retrieve(
 
 
 # ============================================================
-# GEMINI GENERATION WITH RETRY + FALLBACK
+# ============================================================
+# GEMINI MODEL DISCOVERY
+# ============================================================
+
+def get_available_gemini_models():
+
+    try:
+
+        available_models = []
+
+        for model in client.models.list():
+
+            model_name = model.name
+
+            # Remove "models/" prefix if present
+            if model_name.startswith("models/"):
+                model_name = model_name.replace(
+                    "models/",
+                    "",
+                    1
+                )
+
+            # Only consider models that support
+            # generateContent
+            supported_methods = getattr(
+                model,
+                "supported_actions",
+                []
+            )
+
+            if (
+                not supported_methods
+                or "generateContent" in supported_methods
+            ):
+
+                available_models.append(
+                    model_name
+                )
+
+        return available_models
+
+    except Exception as e:
+
+        st.error(
+            f"Could not retrieve available Gemini models: {e}"
+        )
+
+        return []
+
+
+# ============================================================
+# SELECT A FLASH MODEL
+# ============================================================
+
+def select_gemini_model():
+
+    models = get_available_gemini_models()
+
+    if not models:
+        return None
+
+    # Prefer Flash models.
+    flash_models = [
+        model
+        for model in models
+        if "flash" in model.lower()
+    ]
+
+    if flash_models:
+
+        # Prefer newer-looking models first.
+        flash_models.sort(
+            reverse=True
+        )
+
+        return flash_models[0]
+
+    # If no Flash model exists,
+    # use the first compatible model.
+    return models[0]
+
+
+# ============================================================
+# GEMINI GENERATION WITH RETRY
 # ============================================================
 
 def generate_with_gemini(prompt):
 
-    # Primary model + fallback models.
-    #
-    # If a model becomes temporarily unavailable,
-    # the application will try the next model.
+    model_name = select_gemini_model()
 
-    models = [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash"
-    ]
+    if not model_name:
 
-    last_error = None
-
-    for model_name in models:
-
-        st.write(
-            f"Using Gemini model: `{model_name}`"
+        raise RuntimeError(
+            "No compatible Gemini model was found "
+            "for your API key."
         )
 
-        # Retry each model up to 3 times
-        for attempt in range(3):
+    st.write(
+        f"Using Gemini model: `{model_name}`"
+    )
 
-            try:
+    max_attempts = 4
 
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt
+    for attempt in range(max_attempts):
+
+        try:
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+
+            if response is None:
+                raise RuntimeError(
+                    "Gemini returned an empty response."
                 )
 
-                # Make sure Gemini returned actual text.
-                if response is None:
-                    raise RuntimeError(
-                        "Gemini returned an empty response."
+            if not response.text:
+
+                raise RuntimeError(
+                    "Gemini returned no text."
+                )
+
+            return response.text
+
+        except Exception as e:
+
+            error_message = str(e)
+
+            # ================================================
+            # TEMPORARY SERVICE / CAPACITY ERROR
+            # ================================================
+
+            if (
+                "503" in error_message
+                or "UNAVAILABLE" in error_message
+            ):
+
+                if attempt < max_attempts - 1:
+
+                    wait_time = 2 ** attempt
+
+                    st.warning(
+                        f"Gemini is temporarily unavailable. "
+                        f"Retrying in {wait_time} seconds..."
                     )
 
-                if not response.text:
-                    raise RuntimeError(
-                        "Gemini returned no text."
+                    time.sleep(
+                        wait_time
                     )
 
-                return response.text
+                else:
 
-            except Exception as e:
+                    raise RuntimeError(
+                        "Gemini is currently experiencing "
+                        "high demand or temporary capacity "
+                        "limitations. Please try again after "
+                        "a short while."
+                    )
 
-                last_error = e
+            else:
 
-                error_message = str(e)
+                raise RuntimeError(
+                    f"Gemini API error: {e}"
+                )
+
 
                 # ------------------------------------------------
                 # TEMPORARY 503 / UNAVAILABLE
