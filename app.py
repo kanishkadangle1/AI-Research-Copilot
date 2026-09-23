@@ -18,8 +18,14 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# ============================================================
+# PROFESSIONAL THEME
+# ============================================================
+
 st.markdown("""
 <style>
+
 .stApp {
     background-color: #0B1220;
     color: #E5E7EB;
@@ -53,6 +59,7 @@ h1, h2, h3 {
     border: 1px solid #334155;
     border-radius: 10px;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -62,16 +69,22 @@ h1, h2, h3 {
 # ============================================================
 
 try:
+
     client = genai.Client(
         api_key=st.secrets["GEMINI_API_KEY"]
     )
+
 except Exception:
-    st.error("Gemini API configuration error.")
+
+    st.error(
+        "Gemini API configuration error."
+    )
+
     st.stop()
 
 
 # ============================================================
-# UI
+# HEADER
 # ============================================================
 
 st.markdown(
@@ -88,14 +101,17 @@ st.markdown(
 
 
 # ============================================================
-# ARXIV RETRIEVAL
+# ARXIV PAPER RETRIEVAL
 # ============================================================
 
-def fetch_arxiv_papers(topic, max_results=5):
+def fetch_arxiv_papers(
+    topic,
+    max_results=5
+):
 
     url = (
         "https://export.arxiv.org/api/query?"
-       f"search_query=all:{topic}"
+        f"search_query=all:{topic}"
         f"&start=0"
         f"&max_results={max_results}"
     )
@@ -107,7 +123,9 @@ def fetch_arxiv_papers(topic, max_results=5):
 
     response.raise_for_status()
 
-    root = ET.fromstring(response.content)
+    root = ET.fromstring(
+        response.content
+    )
 
     namespace = {
         "atom": "http://www.w3.org/2005/Atom"
@@ -136,15 +154,20 @@ def fetch_arxiv_papers(topic, max_results=5):
         ):
             continue
 
-        papers.append({
-            "title": (
-                title_element.text or ""
-            ).strip(),
+        title = (
+            title_element.text or ""
+        ).strip()
 
-            "abstract": (
-                abstract_element.text or ""
-            ).strip()
-        })
+        abstract = (
+            abstract_element.text or ""
+        ).strip()
+
+        papers.append(
+            {
+                "title": title,
+                "abstract": abstract
+            }
+        )
 
     return papers
 
@@ -176,6 +199,7 @@ def hybrid_retrieve(
     )
 
     query_vector = matrix[-1]
+
     document_vectors = matrix[:-1]
 
     scores = (
@@ -210,6 +234,7 @@ def generate_with_gemini(prompt):
             )
 
             if response and response.text:
+
                 return response.text
 
             raise RuntimeError(
@@ -248,7 +273,7 @@ def generate_with_gemini(prompt):
 
 
 # ============================================================
-# INPUT
+# RESEARCH INPUT
 # ============================================================
 
 topic = st.text_input(
@@ -259,15 +284,24 @@ topic = st.text_input(
     )
 )
 
+
+# ============================================================
+# RESEARCH DEPTH
+# ============================================================
+
 research_mode = st.radio(
     "Research depth",
-    ["Quick", "Standard", "Deep"],
+    [
+        "Quick",
+        "Standard",
+        "Deep"
+    ],
     horizontal=True
 )
 
 
 # ============================================================
-# MAIN APPLICATION
+# START RESEARCH
 # ============================================================
 
 if st.button(
@@ -276,7 +310,7 @@ if st.button(
 ):
 
     # ========================================================
-    # VALIDATE INPUT
+    # VALIDATE TOPIC
     # ========================================================
 
     if not topic.strip():
@@ -300,12 +334,15 @@ if st.button(
     try:
 
         if research_mode == "Quick":
+
             max_papers = 5
 
         elif research_mode == "Standard":
+
             max_papers = 10
 
         else:
+
             max_papers = 20
 
         papers = fetch_arxiv_papers(
@@ -314,12 +351,12 @@ if st.button(
         )
 
     except Exception as e:
-    st.error(
-        f"Could not fetch papers from arXiv: {e}"
-    )
 
-    st.stop()
+        st.error(
+            f"Could not fetch papers from arXiv: {e}"
+        )
 
+        st.stop()
 
 
     # ========================================================
@@ -335,21 +372,27 @@ if st.button(
         st.stop()
 
 
-       # ========================================================
+    # ========================================================
     # RETRIEVAL
     # ========================================================
 
     st.info(
-        f"Research mode: {research_mode} | Analyzing paper relevance..."
+        f"Research mode: {research_mode} | "
+        "Analyzing paper relevance..."
     )
 
     try:
 
         if research_mode == "Quick":
+
             top_k = 3
+
         elif research_mode == "Standard":
+
             top_k = 5
+
         else:
+
             top_k = 10
 
         top_papers = hybrid_retrieve(
@@ -392,7 +435,7 @@ Abstract:
 """
 
 
-    # ========================================================
+        # ========================================================
     # GEMINI PROMPT
     # ========================================================
 
