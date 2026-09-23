@@ -313,14 +313,14 @@ if st.button(
             max_results=max_papers
         )
 
-    except Exception:
+    except Exception as e:
 
-        st.error(
-            "Could not fetch papers from arXiv. "
-            "Please try again."
-        )
+    st.error(
+        f"Could not fetch papers from arXiv: {e}"
+    )
 
-        st.stop()
+    st.stop()
+
 
 
     # ========================================================
